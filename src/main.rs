@@ -1,4 +1,5 @@
 pub mod graph;
+pub mod infer;
 
 fn main() {
     println!("Hello, world!");

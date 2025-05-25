@@ -28,3 +28,35 @@ A target is defined by using the good old bazel terminology: //packages/python/q
 
 
 
+- rdeps done
+
+# creating the graph
+
+- nabs would first read the whole file tree and try to detect packages
+- right now, any directory containing nabs.json is a package
+- read the file and try to infer what build system is being used
+- inference can return multiple detected build systems, in this case, nabs would error out
+  - users are required to fix the build system in nabs.json
+  - you could technically have multiple build systems in the same directory, and nabs should be able to work hmmm
+  - the most generic case is that someone has x build systems in the directory
+  - nabs should detect and create a node for each of those
+
+
+
+- given a package, the inferrer returns
+  - current Target definition
+  - parent Target defs
+
+- a single inferrer can return multiple targets
+- multiple inferrers can return single targets
+- an inferrer can break early
+- an inferrer can give no target
+
+- nabs.json inferrer: returns multiple targets and requires shortcircuting
+- running cargo inferrer on poetry gives None
+- a project containing both cargo.toml and requirements.txt returns 2 targets (1 target per inferrer)
+- We want to differentiate between allowed multiple targets and unintended multiple targets
+
+- Given a target def, we want to verify if its valid, get the inferred result of that target
+  - if the given target def is not in the inferred targets, this is not a valid dependency of the target
+  - for now we panic?

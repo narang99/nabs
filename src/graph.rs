@@ -1,16 +1,4 @@
-// this is basically a package
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
-pub struct Target {
-    name: String,
-}
-
-impl Target {
-    pub fn new(name: String) -> Self {
-        Target { name }
-    }
-}
-
-use std::{collections::HashMap, ops::Deref, rc::Rc};
+use std::{collections::HashMap, fmt::Display, ops::Deref, rc::Rc};
 
 use anyhow::{Result, anyhow};
 use petgraph::{
@@ -19,6 +7,18 @@ use petgraph::{
     visit::{Dfs, Visitable},
 };
 
+#[derive(Hash, Eq, PartialEq, Debug, Clone)]
+pub struct Target {
+    name: String,
+    flavor: String,
+}
+
+impl Target {
+    pub fn new(name: String, flavor: String) -> Self {
+        Target { name, flavor }
+    }
+}
+
 // petgraph has a whole notion of only using copy-able indices for their graph
 // everything happens in the form of `NodeIndex`, its hard to get what "index" some node is natively from petgraph
 // as such, we manage indices ourselves in our fat structure
@@ -26,6 +26,7 @@ use petgraph::{
 // nodes in our hashmap
 // I would love to use GraphMap directly, but i cant implement `Copy` on my package
 // I could keep track of some random unique integer for that, but thats the same work as simply storing indices
+// we make a ridiculous number of clone calls for `NodeIndex`, this is fine as its just a u32
 pub struct TargetGraph {
     // the main inner graph
     // make this acyclic
@@ -50,7 +51,21 @@ impl TargetGraph {
         }
     }
 
+    pub fn contains_node(&self, node: &Target) -> bool {
+        let index = self.target_by_index.get(node);
+        match index {
+            None => false,
+            Some(v) => match self.inner.node_weight(v.clone()) {
+                None => false,
+                Some(_) => true,
+            },
+        }
+    }
+
     pub fn add_node(&mut self, node: Target) {
+        if self.target_by_index.contains_key(&node) {
+            return;
+        }
         let index = self.inner.add_node(());
         let node = Rc::new(node);
         self.index_by_target.insert(index, Rc::clone(&node));
@@ -60,6 +75,9 @@ impl TargetGraph {
     pub fn add_edge(&mut self, src: &Target, dest: &Target) -> Result<()> {
         let s = self.get_cloned_node_index(src)?;
         let d = self.get_cloned_node_index(dest)?;
+        if self.inner.contains_edge(s.clone(), d.clone()) {
+            return Ok(());
+        }
         self.inner.add_edge(s, d, ());
         Ok(())
     }
@@ -95,6 +113,24 @@ impl TargetGraph {
     }
 }
 
+impl Display for TargetGraph {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for node_idx in self.inner.node_indices() {
+            let node = self.index_by_target.get(&node_idx).expect("corrupted graph state");
+            write!(f, "{} -> ", node.name)?;
+            
+            let mut neighbors = Vec::new();
+            for neighbor_idx in self.inner.neighbors(node_idx) {
+                let neighbor = self.index_by_target.get(&neighbor_idx).expect("corrupted graph state");
+                neighbors.push(neighbor.name.clone());
+            }
+            
+            writeln!(f, "[{}]", neighbors.join(", "))?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::{Target, TargetGraph};
@@ -105,15 +141,15 @@ mod test {
 
         // atleast create a reasonably big transitive graph
 
-        let qsync_stream = Target::new(String::from("qsync_stream"));
-        let image_manager = Target::new(String::from("image_manager"));
-        let qure_dicom_utils = Target::new(String::from("qure_dicom_utils"));
-        let qxr = Target::new(String::from("qxr"));
-        let qxr_reports = Target::new(String::from("qxr_reports"));
-        let qer = Target::new(String::from("qer"));
-        let qer_reports = Target::new(String::from("qer_reports"));
-        let qureapi = Target::new(String::from("qureapi"));
-        let cathode = Target::new(String::from("cathode"));
+        let qsync_stream = Target::new(String::from("qsync_stream"), String::from("cargo"));
+        let image_manager = Target::new(String::from("image_manager"), String::from("cargo"));
+        let qure_dicom_utils = Target::new(String::from("qure_dicom_utils"), String::from("cargo"));
+        let qxr = Target::new(String::from("qxr"), String::from("cargo"));
+        let qxr_reports = Target::new(String::from("qxr_reports"), String::from("cargo"));
+        let qer = Target::new(String::from("qer"), String::from("cargo"));
+        let qer_reports = Target::new(String::from("qer_reports"), String::from("cargo"));
+        let qureapi = Target::new(String::from("qureapi"), String::from("cargo"));
+        let cathode = Target::new(String::from("cathode"), String::from("cargo"));
 
         g.add_node(image_manager.clone());
         g.add_node(qsync_stream.clone());
