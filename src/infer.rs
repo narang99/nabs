@@ -184,18 +184,17 @@ mod test {
         fn from_raw_target(&self, t: &super::RawTarget) -> anyhow::Result<super::InferResult> {
             let deps = self.n_by_deps.get(&t.name);
             match deps {
-                None => {
-                    Ok(InferResult {it: InferredTarget::Nothing, what_next: self.what_next})
-                },
-                Some(deps) => {
-                    Ok(InferResult {
-                        it: InferredTarget::One(Single {
-                            target: Target::new(t.name.clone(), String::from("cargo")),
-                            parents: deps.clone(),
-                        }),
-                        what_next: self.what_next,
-                    })
-                }
+                None => Ok(InferResult {
+                    it: InferredTarget::Nothing,
+                    what_next: self.what_next,
+                }),
+                Some(deps) => Ok(InferResult {
+                    it: InferredTarget::One(Single {
+                        target: Target::new(t.name.clone(), String::from("cargo")),
+                        parents: deps.clone(),
+                    }),
+                    what_next: self.what_next,
+                }),
             }
         }
     }
@@ -204,56 +203,66 @@ mod test {
     fn test_runner() {
         // Create a HashMap to define dependencies for each package
         let mut n_by_deps = HashMap::new();
-        
+
         // Define dependencies matching the graph.rs test structure
         n_by_deps = HashMap::from([
             (
                 "image_manager".to_string(),
-                vec![RawTarget { name: "qsync_stream".to_string() }]
+                vec![RawTarget {
+                    name: "qsync_stream".to_string(),
+                }],
             ),
-            (
-                "qsync_stream".to_string(),
-                vec![],
-            ),
+            ("qsync_stream".to_string(), vec![]),
             (
                 "qureapi".to_string(),
                 vec![
-                    RawTarget { name: "qxr".to_string() },
-                    RawTarget { name: "qer".to_string() },
-                    RawTarget { name: "qer_reports".to_string() },
+                    RawTarget {
+                        name: "qxr".to_string(),
+                    },
+                    RawTarget {
+                        name: "qer".to_string(),
+                    },
+                    RawTarget {
+                        name: "qer_reports".to_string(),
+                    },
                 ],
             ),
             (
                 "cathode".to_string(),
                 vec![
-                    RawTarget { name: "qxr".to_string() },
-                    RawTarget { name: "qxr_reports".to_string() },
+                    RawTarget {
+                        name: "qxr".to_string(),
+                    },
+                    RawTarget {
+                        name: "qxr_reports".to_string(),
+                    },
                 ],
             ),
             (
-                "qxr".to_string(), 
-                vec![
-                    RawTarget { name: "qure_dicom_utils".to_string() },
-                ]
+                "qxr".to_string(),
+                vec![RawTarget {
+                    name: "qure_dicom_utils".to_string(),
+                }],
             ),
             (
                 "qxr_reports".to_string(),
-                vec![RawTarget { name: "qxr".to_string() }]
+                vec![RawTarget {
+                    name: "qxr".to_string(),
+                }],
             ),
             (
                 "qer".to_string(),
-                vec![
-                    RawTarget { name: "qure_dicom_utils".to_string() },
-                ],
+                vec![RawTarget {
+                    name: "qure_dicom_utils".to_string(),
+                }],
             ),
             (
-                "qer_reports".to_string(), 
-                vec![RawTarget { name: "qer".to_string() }]
+                "qer_reports".to_string(),
+                vec![RawTarget {
+                    name: "qer".to_string(),
+                }],
             ),
-            (
-                "qure_dicom_utils".to_string(),
-                vec![]
-            ),
+            ("qure_dicom_utils".to_string(), vec![]),
         ]);
 
         // Create the mock inferrer
@@ -266,12 +275,12 @@ mod test {
         let runner = InferRunner::new(vec![Box::new(mock_infer)]);
 
         // Start with qure_dicom_utils as our root
-        let start = vec![RawTarget { name: "qureapi".to_string() }];
-        
+        let start = vec![RawTarget {
+            name: "qureapi".to_string(),
+        }];
+
         // Build the graph
         let graph = runner.build_graph(start).unwrap();
-        use petgraph::dot::{Dot, Config};
         println!("{}", graph);
-
     }
 }
