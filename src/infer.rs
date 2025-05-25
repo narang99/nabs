@@ -32,6 +32,7 @@ pub enum Next {
     Break,
 }
 
+#[derive(Debug)]
 pub struct InferResult {
     pub it: InferredTarget,
     pub what_next: Next,
@@ -175,8 +176,13 @@ mod test {
 
     use super::{Infer, InferResult, InferredTarget, Next, RawTarget, Single};
 
+    struct Dep {
+        ps: Vec<RawTarget>,
+        flavors: Vec<String>,
+    }
+
     struct MockInfer {
-        n_by_deps: HashMap<String, Vec<RawTarget>>,
+        n_by_deps: HashMap<String, Dep>,
         what_next: Next,
     }
 
@@ -186,33 +192,91 @@ mod test {
             match deps {
                 None => Ok(InferResult {
                     it: InferredTarget::Nothing,
-                    what_next: self.what_next,
+                    what_next: Next::Continue,
                 }),
-                Some(deps) => Ok(InferResult {
-                    it: InferredTarget::One(Single {
-                        target: Target::new(t.name.clone(), String::from("cargo")),
-                        parents: deps.clone(),
-                    }),
-                    what_next: self.what_next,
-                }),
+                Some(deps) => {
+                    if deps.flavors.len() == 1 {
+                        Ok(InferResult {
+                            it: InferredTarget::One(Single {
+                                target: Target::new(t.name.clone(), deps.flavors[0].clone()),
+                                parents: deps.ps.clone(),
+                            }),
+                            what_next: Next::Continue,
+                        })
+                    } else {
+                        let targets = deps
+                            .flavors
+                            .iter()
+                            .map(|f| Single {
+                                target: Target::new(t.name.clone(), f.clone()),
+                                parents: deps.ps.clone(),
+                            })
+                            .collect();
+
+                        Ok(InferResult {
+                            it: InferredTarget::Many(targets),
+                            what_next: Next::Break,
+                        })
+                    }
+                }
             }
         }
     }
 
     #[test]
     fn test_runner() {
-        // Create a HashMap to define dependencies for each package
-        let mut n_by_deps = HashMap::new();
+        let infs: Vec<Box<dyn Infer>> = vec![
+            Box::new(get_infer_1()), Box::new(get_infer_2())
+        ];
+        let runner = InferRunner::new(infs);
+        let start = vec![RawTarget {
+            name: "qureapi".to_string(),
+        }];
+        let graph = runner.build_graph(start).unwrap();
+        println!("{}", graph);
 
-        // Define dependencies matching the graph.rs test structure
-        n_by_deps = HashMap::from([
-            (
-                "image_manager".to_string(),
-                vec![RawTarget {
+        // println!("{:?}", infs[1].from_raw_target(&RawTarget { name: "qsync_stream".to_string() }).unwrap());
+        let start = vec![RawTarget {
+            name: "image_manager".to_string(),
+        }];
+        let graph = runner.build_graph(start).unwrap();
+        println!("{}", graph);
+    }
+
+    fn get_infer_2() -> MockInfer {
+        let mut n_by_deps: HashMap<String, Dep> = HashMap::new();
+        n_by_deps.insert(
+            "image_manager".to_string(),
+            Dep {
+                ps: vec![RawTarget {
                     name: "qsync_stream".to_string(),
                 }],
-            ),
-            ("qsync_stream".to_string(), vec![]),
+                flavors: vec!["python".to_string()],
+            },
+        );
+        n_by_deps.insert(
+            "qsync_stream".to_string(),
+            Dep {
+                ps: vec![],
+                flavors: vec!["python".to_string(), "cargo".to_string()],
+            },
+        );
+        MockInfer {
+            n_by_deps,
+            what_next: Next::Continue,
+        }
+    }
+
+    fn get_infer_1() -> MockInfer {
+        let mut n_by_deps = HashMap::new();
+        n_by_deps = HashMap::from([
+            // (
+            //     "image_manager".to_string(),
+            //     vec![RawTarget {
+            //         name: "qsync_stream".to_string(),
+            //     }],
+            // ),
+            // ("qsync_stream".to_string(), vec![]),
             (
                 "qureapi".to_string(),
                 vec![
@@ -264,23 +328,21 @@ mod test {
             ),
             ("qure_dicom_utils".to_string(), vec![]),
         ]);
-
-        // Create the mock inferrer
-        let mock_infer = MockInfer {
+        let n_by_deps = n_by_deps
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k,
+                    Dep {
+                        ps: v,
+                        flavors: vec!["cargo".to_string()],
+                    },
+                )
+            })
+            .collect();
+        MockInfer {
             n_by_deps,
             what_next: Next::Continue,
-        };
-
-        // Create the infer runner with our mock
-        let runner = InferRunner::new(vec![Box::new(mock_infer)]);
-
-        // Start with qure_dicom_utils as our root
-        let start = vec![RawTarget {
-            name: "qureapi".to_string(),
-        }];
-
-        // Build the graph
-        let graph = runner.build_graph(start).unwrap();
-        println!("{}", graph);
+        }
     }
 }

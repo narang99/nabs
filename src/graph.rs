@@ -19,6 +19,12 @@ impl Target {
     }
 }
 
+impl Display for Target {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.name, self.flavor)
+    }
+}
+
 // petgraph has a whole notion of only using copy-able indices for their graph
 // everything happens in the form of `NodeIndex`, its hard to get what "index" some node is natively from petgraph
 // as such, we manage indices ourselves in our fat structure
@@ -117,12 +123,12 @@ impl Display for TargetGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for node_idx in self.inner.node_indices() {
             let node = self.index_by_target.get(&node_idx).expect("corrupted graph state");
-            write!(f, "{} -> ", node.name)?;
+            write!(f, "{} -> ", node)?;
             
             let mut neighbors = Vec::new();
             for neighbor_idx in self.inner.neighbors(node_idx) {
                 let neighbor = self.index_by_target.get(&neighbor_idx).expect("corrupted graph state");
-                neighbors.push(neighbor.name.clone());
+                neighbors.push(format!("{}", neighbor));
             }
             
             writeln!(f, "[{}]", neighbors.join(", "))?;
