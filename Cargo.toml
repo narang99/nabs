@@ -1,0 +1,8 @@
+[package]
+name = "nabs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+petgraph = {version = "0.8.1", features=["std", "graphmap"]}
