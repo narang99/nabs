@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use anyhow::Result;
 use serde::Deserialize;
@@ -32,13 +32,19 @@ struct CargoToml {
 }
 
 pub struct CargoInfer {
-    repo: Box<dyn Repository>,
+    repo: Rc<dyn Repository>,
+}
+
+impl CargoInfer {
+    pub fn new(repo: Rc<dyn Repository>) -> Self {
+        Self { repo }
+    }
 }
 
 fn get_parents(
     our_target: &RawTarget,
     cargo_toml: CargoToml,
-    repo: &Box<dyn Repository>,
+    repo: &Rc<dyn Repository>,
 ) -> Result<(Vec<RawTarget>, Vec<FailedParent>)> {
     let (mut s, mut f) = deps_to_raw_targets(our_target, cargo_toml.dependencies, repo)?;
     let (s1, f1) = deps_to_raw_targets(our_target, cargo_toml.dev_dependencies, repo)?;
@@ -50,7 +56,7 @@ fn get_parents(
 fn deps_to_raw_targets(
     our_target: &RawTarget,
     deps: HashMap<String, Dependency>,
-    repo: &Box<dyn Repository>,
+    repo: &Rc<dyn Repository>,
 ) -> Result<(Vec<RawTarget>, Vec<FailedParent>)> {
     let mut success = Vec::new();
     let mut failed = Vec::new();
@@ -111,7 +117,7 @@ impl Infer for CargoInfer {
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, path::PathBuf};
+    use std::{collections::HashMap, path::PathBuf, rc::Rc};
 
     use crate::{
         infer::core::{Infer, InferredTarget, Next},
@@ -144,7 +150,7 @@ mod test {
             PathBuf::new(),
         );
         let inf = CargoInfer {
-            repo: Box::new(repo),
+            repo: Rc::new(repo),
         };
         let infer_result = inf
             .from_raw_target(&RawTarget::from_string_name(us_name.to_string()).unwrap())

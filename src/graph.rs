@@ -84,7 +84,7 @@ impl TargetGraph {
         Ok(d)
     }
 
-    pub fn rdeps(&self, targets: Vec<&Target>) -> Result<Vec<Target>> {
+    pub fn rdeps(&self, targets: &Vec<Target>) -> Result<Vec<Target>> {
         let mut indices = Vec::new();
         for t in targets {
             indices.push(self.get_cloned_node_index(t)?);
@@ -202,7 +202,7 @@ mod test {
         g.add_edge(&qure_dicom_utils, &qxr).unwrap();
         g.add_edge(&qure_dicom_utils, &qer).unwrap();
 
-        let res = g.rdeps(vec![&qxr]).unwrap();
+        let res = g.rdeps(&vec![qxr.clone()]).unwrap();
         assert!(res.contains(&qureapi));
         assert!(res.contains(&qxr));
         assert!(res.contains(&qxr_reports));
@@ -210,14 +210,14 @@ mod test {
         assert_eq!(res.len(), 4);
 
         // this graph does not contain any qxr specific stuff
-        let res = g.rdeps(vec![&qer]).unwrap();
+        let res = g.rdeps(&vec![qer.clone()]).unwrap();
         assert!(res.contains(&qureapi));
         assert!(res.contains(&qer));
         assert!(res.contains(&qer_reports));
         assert_eq!(res.len(), 3);
 
         // totally different graph
-        let res = g.rdeps(vec![&qsync_stream]).unwrap();
+        let res = g.rdeps(&vec![qsync_stream.clone()]).unwrap();
         assert!(res.contains(&qsync_stream));
         assert!(res.contains(&image_manager));
         assert_eq!(res.len(), 2);

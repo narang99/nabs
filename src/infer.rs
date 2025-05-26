@@ -3,11 +3,14 @@ mod icargo;
 mod py_requirements;
 
 use core::{Infer, InferredTarget, Next, Single};
+use std::rc::Rc;
 
 use anyhow::{Context, Result, bail};
+use icargo::CargoInfer;
+use py_requirements::{DEFAULT_REQ_FILE_NAME, PyRequirementsInfer};
 
 use crate::graph::TargetGraph;
-use crate::types::{RawTarget, Target};
+use crate::types::{RawTarget, Repository, Target};
 
 pub struct InferRunner {
     infers: Vec<Box<dyn Infer>>,
@@ -18,18 +21,34 @@ impl InferRunner {
         InferRunner { infers }
     }
 
+    pub fn default(repo: &Rc<dyn Repository>) -> Self {
+        InferRunner {
+            infers: vec![
+                Box::new(CargoInfer::new(Rc::clone(repo))),
+                Box::new(PyRequirementsInfer::new(
+                    Rc::clone(repo),
+                    DEFAULT_REQ_FILE_NAME.to_string(),
+                )),
+            ],
+        }
+    }
+
     // given a set of raw targets to start from
     // this would build a graph where it would link parents successively
     // a raw target can actually be associated with multiple targets
     // what do we do in that case?
     // an example is returning {name: a, flavor: cargo}, {name: a, flavor: poetry}
     // in this case, flavor should match of the returned parent dep
-    pub fn build_graph(&self, start: Vec<RawTarget>) -> Result<TargetGraph> {
+    pub fn build_graph<I>(&self, start: I) -> Result<(TargetGraph, Vec<Target>)>
+    where
+        I: IntoIterator<Item = RawTarget>,
+    {
         let mut g = TargetGraph::new();
+        let mut our_targets = Vec::new();
         for s in start {
-            self.build_graph_rec(&mut g, &s)?;
+            our_targets.extend(self.build_graph_rec(&mut g, &s)?);
         }
-        Ok(g)
+        Ok((g, our_targets))
     }
 
     // we are given a raw target
@@ -40,6 +59,7 @@ impl InferRunner {
     // so we need to return the nodes that resulted from us being inserted
     // there can be multiple nodes
     fn build_graph_rec(&self, g: &mut TargetGraph, raw: &RawTarget) -> Result<Vec<Target>> {
+        // if our inference fails, we return fast
         let our_inferred_targets = self.run_inf(raw)?;
         for our in our_inferred_targets.iter() {
             // for one of our targets, we need to build graph of parents
@@ -48,18 +68,57 @@ impl InferRunner {
             }
             g.add_node(our.target.clone());
             for p in &our.parents {
-                let parent_targets = self.build_graph_rec(g, p)?;
-                for pt in parent_targets {
-                    g.add_edge(&pt, &our.target).expect(
-                        &format!("unexpected corruption, failed in adding edge for {:?} and {:?} even though they should be in the graph", p, our.target)
-                    );
-                }
+                // for a parent's failure in inference, currently only logging it
+                // the cli would ignore failures in parent graph building
+                // this at-least gives us a partial graph, terminated at the point of failure
+
+                match self.build_graph_rec(g, p) {
+                    Err(e) => {
+                        println!(
+                            "warning: failed in creating graph for package={}. nabs will skip adding this target in analysis",
+                            p.name
+                        );
+                        println!("reason:\n{:?}", e);
+                    }
+                    Ok(parent_targets) => {
+                        for pt in parent_targets {
+                            g.add_edge(&pt, &our.target).expect(
+                                &format!("unexpected corruption, failed in adding edge for {:?} and {:?} even though they should be in the graph", p, our.target)
+                            );
+                        }
+                    }
+                };
             }
         }
         Ok(our_inferred_targets.into_iter().map(|i| i.target).collect())
     }
 
-    fn run_inf(&self, raw: &RawTarget) -> Result<Vec<Single>> {
+    pub fn run_inf(&self, raw: &RawTarget) -> Result<Vec<Single>> {
+        // a single infer can return 0, 1 or more targets
+        // we run multiple infers in a list
+        // it is invalid for multiple infers to return anything other than 0
+        // that is there should be only one infer which wins, it either returns 1 target or many targets
+        // an infer can also say if we want to infer more after giving some result
+        // the first infer which directly reads nabs.json simply asks us to break if it finds any target
+        // basically, if you want to make sure nobody infers after you, you return break and its guaranteed that your infer would work
+        // let mut inferred_targets = Vec::new();
+        let mut inferred_targets = self.raw_run_inferrers(raw)?;
+        self.validate_inferred_targets(raw, &inferred_targets)?;
+
+        let t = std::mem::replace(&mut inferred_targets[0], InferredTarget::Nothing);
+        match t {
+            InferredTarget::Nothing => {
+                panic!(
+                    "inferred_targets is a list with only `Nothing` inside, this is impossible, package={}",
+                    raw.name
+                );
+            }
+            InferredTarget::One(s) => Ok(vec![s]),
+            InferredTarget::Many(m) => Ok(m),
+        }
+    }
+
+    fn raw_run_inferrers(&self, raw: &RawTarget) -> Result<Vec<InferredTarget>> {
         // a single infer can return 0, 1 or more targets
         // we run multiple infers in a list
         // it is invalid for multiple infers to return anything other than 0
@@ -85,7 +144,14 @@ impl InferRunner {
                 Next::Continue => {}
             };
         }
+        Ok(inferred_targets)
+    }
 
+    fn validate_inferred_targets(
+        &self,
+        raw: &RawTarget,
+        inferred_targets: &Vec<InferredTarget>,
+    ) -> Result<()> {
         // TODO: if i want people to use this application
         // will need to return concrete error types here so that we can handle this at top level and show a good message
         if inferred_targets.len() > 1 {
@@ -101,18 +167,7 @@ impl InferRunner {
                 raw.name
             );
         }
-
-        let t = std::mem::replace(&mut inferred_targets[0], InferredTarget::Nothing);
-        match t {
-            InferredTarget::Nothing => {
-                panic!(
-                    "inferred_targets is a list with only `Nothing` inside, this is impossible, package={}",
-                    raw.name
-                );
-            }
-            InferredTarget::One(s) => Ok(vec![s]),
-            InferredTarget::Many(m) => Ok(m),
-        }
+        Ok(())
     }
 }
 
@@ -188,7 +243,7 @@ mod test {
         let infs: Vec<Box<dyn Infer>> = vec![Box::new(get_infer_1()), Box::new(get_infer_2())];
         let runner = InferRunner::new(infs);
         let start = vec![RawTarget::from_string_name("qureapi".to_string()).unwrap()];
-        let graph = runner.build_graph(start).unwrap();
+        let (graph, _) = runner.build_graph(start).unwrap();
         compare(
             &graph,
             "qure_dicom_utils",
@@ -206,7 +261,7 @@ mod test {
         compare(&graph, "qer_reports", "cargo", vec![("qureapi", "cargo")]);
 
         let start = vec![RawTarget::from_string_name("image_manager".to_string()).unwrap()];
-        let graph = runner.build_graph(start).unwrap();
+        let (graph, _) = runner.build_graph(start).unwrap();
         compare(
             &graph,
             "qsync_stream",

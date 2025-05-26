@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::types::{BuildSystemPath, PathFormat, RawTarget, Repository, Target};
 
 use super::core::{FailedParent, Infer, InferResult, InferredTarget, Next, Single};
@@ -6,12 +8,12 @@ pub const FLAVOR: &str = "python_requirements";
 pub const DEFAULT_REQ_FILE_NAME: &str = "requirements.txt";
 
 pub struct PyRequirementsInfer {
-    repo: Box<dyn Repository>,
+    repo: Rc<dyn Repository>,
     req_file_name: String,
 }
 
 impl PyRequirementsInfer {
-    pub fn new(repo: Box<dyn Repository>, req_file_name: String) -> Self {
+    pub fn new(repo: Rc<dyn Repository>, req_file_name: String) -> Self {
         Self {
             repo,
             req_file_name,
@@ -93,7 +95,7 @@ fn get_file_names(content: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, path::PathBuf};
+    use std::{collections::HashMap, path::PathBuf, rc::Rc};
 
     use crate::{
         infer::{
@@ -124,7 +126,7 @@ mod test {
             )]),
             PathBuf::new(),
         );
-        let inf = PyRequirementsInfer::new(Box::new(repo), DEFAULT_REQ_FILE_NAME.to_string());
+        let inf = PyRequirementsInfer::new(Rc::new(repo), DEFAULT_REQ_FILE_NAME.to_string());
         let infer_result = inf
             .from_raw_target(&RawTarget::from_string_name(us_name.to_string()).unwrap())
             .unwrap();

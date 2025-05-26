@@ -190,6 +190,7 @@ impl BuildSystemPath {
 /// note: the fact that it models a file system backed repository is not abstracted out, I'm adding this here cuz all methods work with paths or talk about reading files, etc
 /// This trait is also responsible for providing ways to convert all our different path string formats
 /// I'm keeping the API very concrete and explicit, its very confusing right now anyways, not touching the whole `From` business for now
+/// 
 pub trait Repository {
     /// given a path provide the content corresponding to that "path"
     /// for a FS repository, this would simply involve reading the file at the path
@@ -199,6 +200,37 @@ pub trait Repository {
 
     /// return the root of the monorepo
     fn workspace_root(&self) -> &Path;
+
+    fn get_nabs_packages(&self) -> Vec<PathBuf> {
+        let nabs_pkgs: Vec<PathBuf> = ignore::Walk::new(self.workspace_root()).into_iter().filter_map(|v| {
+            match v {
+                Err(e) => {
+                    println!("warning: nabs could not read path, skipping analysis for this path and its children. cause={}", e);
+                    None
+                },
+                Ok(entry) => {
+                    let p = entry.path();
+                    if p.is_file() {
+                        match p.file_name() {
+                            None => None,
+                            Some(v) => {
+                                if v == "nabs.json" {
+                                    PathBuf::from(v).parent().map(|p| PathBuf::from(p))
+                                } else {
+                                    None
+                                }
+                            },
+                        }
+                        // Some(p)
+                    } else {
+                        None
+                    }
+
+                },
+            }
+        }).collect();
+        nabs_pkgs
+    }
 
     /// given a path relative to a RawTarget, construct a new RawTarget
     /// with the correct target name
@@ -236,6 +268,53 @@ pub trait Repository {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Monorepo {
+    workspace_path: PathBuf,
+}
+
+impl Monorepo {
+    /// this would create a new Monorepo instance
+    /// it tries to find the workspace root by looking up all parents recursively and trying to find workspace.json file
+    /// fails if it doesn't find the file
+    pub fn new() -> Result<Self> {
+        let cwd = std::env::current_dir().context("Failed to get current working directory")?;
+
+        let mut search_path = cwd.as_path();
+        loop {
+            let workspace_file = search_path.join("workspace.json");
+            if workspace_file.exists() {
+                return Ok(Monorepo {
+                    workspace_path: search_path.to_path_buf(),
+                });
+            }
+
+            match search_path.parent() {
+                Some(parent) => search_path = parent,
+                None => break,
+            }
+        }
+        bail!("Could not find workspace.json in current directory or any parent directory")
+    }
+}
+
+impl Repository for Monorepo {
+    fn get_content(&self, path: &Path) -> Option<String> {
+        match std::fs::read_to_string(path) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                println!("warning: nabs failed to read file={}, skipping, cause={}", path.to_string_lossy(), e);
+                None
+            }
+        }
+    }
+
+    fn workspace_root(&self) -> &Path {
+        &self.workspace_path
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct MockRepo {
     fake: HashMap<String, String>,
     workspace_path: PathBuf,
