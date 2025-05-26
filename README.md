@@ -2,16 +2,24 @@
 
 **NOTE:** This project is not in a very useful state right now, I'm only planning to use it personal projects to see if its any good.  
 
-`nabs` models your monorepo as a graph and finds all the affected packages given a changeset.  
+`nabs` models your monorepo as a graph and finds all the affected packages for a given changeset.  
 
-When using a monorepo, it is very useful to only selectively run pipelines. A common workflow is this:
+When using a monorepo, it is very useful to only selectively run CI pipelines. A common workflow is this:
 - find the diff in the PR using git
 - find all the affected packages and services using this diff
 - run scripts/pipelines for all the affected packages
 
-This can be done in bazel, for example, using `bazel query 'rdeps(//my-target)'`. All the build systems with monorepos give this feature. The problem is that each of these build tools have a **steep learning curve and a high maintenance cost**. Tools like `bazel` have their own way of building, which can be different from how open-source does it, and thus developers struggle with trivial things like IDE integration.  
+This can be done in `bazel` and friends, for example, using `bazel query 'rdeps(//my-target)'`. All the build systems with monorepos give this feature.   
+These build tools come with their own set of pains though:
+- steep learning curve
+- high maintenance cost
+- bad IDE integration
+- huge upfront investment in building a custom CI
 
-The main benefit I saw from a monorepo is that we could change all the code in one PR. Raising multiple PRs is a big velocity killer for me personally.  
+Tools like `bazel` are extremely feature-rich, fast and provide some amazing qualities (like hermeticity). They are however, built for scale, where you have a dedicated engineering team taking care of it. They give the fast monorepo experience at scale.  
+`nabs` is not meant for those use-cases. `nabs` is for mid-sized engineering teams, who just want a simple monorepo setup while using existing tooling and infrastructure.  
+
+The main benefit I saw from a monorepo is that we could change all the code in one PR. Raising multiple PRs is a big velocity killer.  
 I generally prefer all code to be in the same repo. This works well for sometime, until your tests and pipelines start taking a long time. Or you now have multiple applications/services in the same monorepo (whose deployment should be done independently)   
 
 This is where `nabs` can come in. The only explicit goal of `nabs` is to track dependencies, it is neither a build executor, nor a test runner, nor a remote execution framework. `nabs` does not care about purity, it does not force any ideology on you.  
