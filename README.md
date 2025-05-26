@@ -16,6 +16,9 @@ echo "{}" > nabs.json
 ```
 `nabs` would start tracking your package. Do this for every package in the monorepo.  
 
+> *what is a package?*   
+> This could be some python library/application/service, or a rust crate.  
+> For the case of python, you would, for example, have a `requirements.txt` in the root directory of that package.  
 
 You can take a look at the graph `nabs` creates using
 
