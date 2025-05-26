@@ -174,7 +174,7 @@ impl InferRunner {
         }
         if inferred_targets.len() == 0 {
             bail!(
-                "err: could not infer any target for package={}, add it manually in nabs.json",
+                "err: could not infer any target for package={}",
                 raw.name
             );
         }
