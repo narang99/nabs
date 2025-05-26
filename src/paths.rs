@@ -29,10 +29,7 @@ pub fn normalize_path(path: &Path) -> Result<PathBuf> {
             Component::CurDir => {}
             Component::ParentDir => {
                 if let None = ret.parent() {
-                    bail!(
-                        "failed in normalizing path, path={:?}",
-                        path
-                    );
+                    bail!("failed in normalizing path, path={:?}", path);
                 }
                 ret.pop();
             }

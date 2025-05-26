@@ -2,7 +2,6 @@ use anyhow::Result;
 
 use crate::types::{RawTarget, Target};
 
-
 /// if the inferrer fails for some parent during parsing, they should return this for that particular parent
 /// Useful to keep this information for showing diagnostics in the end
 #[derive(Debug)]

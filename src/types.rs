@@ -190,7 +190,7 @@ impl BuildSystemPath {
 /// note: the fact that it models a file system backed repository is not abstracted out, I'm adding this here cuz all methods work with paths or talk about reading files, etc
 /// This trait is also responsible for providing ways to convert all our different path string formats
 /// I'm keeping the API very concrete and explicit, its very confusing right now anyways, not touching the whole `From` business for now
-/// 
+///
 pub trait Repository {
     /// given a path provide the content corresponding to that "path"
     /// for a FS repository, this would simply involve reading the file at the path
@@ -303,7 +303,11 @@ impl Repository for Monorepo {
         match std::fs::read_to_string(path) {
             Ok(s) => Some(s),
             Err(e) => {
-                println!("warning: nabs failed to read file={}, skipping, cause={}", path.to_string_lossy(), e);
+                println!(
+                    "warning: nabs failed to read file={}, skipping, cause={}",
+                    path.to_string_lossy(),
+                    e
+                );
                 None
             }
         }

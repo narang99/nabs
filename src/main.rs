@@ -1,10 +1,6 @@
-use std::{
-    collections::HashSet,
-    path::{PathBuf},
-    rc::Rc,
-};
+use std::{collections::HashSet, path::PathBuf, rc::Rc};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use clap::Parser;
 use infer::InferRunner;
 use types::{Monorepo, RawTarget, Repository, Target, TargetName};
@@ -58,12 +54,18 @@ fn get_changeset() -> Result<()> {
     let runner = InferRunner::default(&monorepo);
     let mut targets = Vec::new();
     for p in &pkgs {
-        let val = p.to_str().ok_or(anyhow!("could not parse path: {:?}", p))?.to_string();
+        let val = p
+            .to_str()
+            .ok_or(anyhow!("could not parse path: {:?}", p))?
+            .to_string();
         let val = RawTarget::from_string_name(val)?;
         targets.push(val);
     }
     let (graph, our_targets) = runner.build_graph(targets)?;
-    let our_targets: Vec<Target> = our_targets.into_iter().filter(|t| to_search.contains(&t.name)).collect();
+    let our_targets: Vec<Target> = our_targets
+        .into_iter()
+        .filter(|t| to_search.contains(&t.name))
+        .collect();
     let result = graph.rdeps(&our_targets)?;
     for target in result {
         println!("{}", target.name_as_string_ref());
@@ -86,7 +88,9 @@ fn get_pkgs_to_search(
                 );
             }
             Some(v) => {
-                let v = v.to_str().ok_or(anyhow!("could not parse package path: {:?}", v))?;
+                let v = v
+                    .to_str()
+                    .ok_or(anyhow!("could not parse package path: {:?}", v))?;
                 pkgs_to_search.insert(TargetName::new(v.to_string())?);
             }
         }
