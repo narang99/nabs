@@ -27,7 +27,8 @@ You can take a look at the graph `nabs` creates using
 nabs graph
 ```
 
-`nabs changeset` takes a list of files as input, finds the packages those files belong to, and finds all the packages which transitively depend on these packages. You can now run only the tests for affected packages in a PR (or your main branch build, you need to find a way to find the diff from the last successful build from your CI provider).  
+`nabs changeset` takes a list of files as input, finds the packages those files belong to, and finds all the packages which transitively depend on these packages.  
+You can now run only the tests for affected packages in a PR (or your main branch build, you need to find a way to find the diff from the last successful build from your CI provider).  
 
 A simple script for this
 ```sh
