@@ -41,7 +41,7 @@ echo $AFFECTED_PACKAGES | while read pkg_dir; do $pkg_dir/run_test.sh; done
 ```
 
 ## Supported build systems/languages
-| language | tool/manifest file |
+| language | tool |
 |----------|--------------------|
 |  python  | requirements.txt |
 | rust | Cargo.toml |
