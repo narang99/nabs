@@ -4,14 +4,14 @@
 
 `nabs` models your monorepo as a graph and finds all the affected packages for a given changeset.  
 
-When using a monorepo, it is very useful to only selectively run CI pipelines. A common workflow is this:
+Monorepos allow you to change all the code in a single PR, this has great benefits for developer velocity. In the beginning, its fine to run all the tests in the repo in a single pipeline. Once your packages start to grow, your CI time balloons up. In this case, it would make sense to have a single pipeline for every package in the monorepo.  
+The problem now is, detecting which pipelines to run. A common workflow is this:
 - find the diff in the PR using git
-- find all the affected packages and services using this diff
-- run scripts/pipelines for all the affected packages
+- find all the affected packages and services using this diff **(`nabs` does this)**
+- run pipelines for all the affected packages
 
 This can be done in `bazel` and friends, for example, using `bazel query 'rdeps(//my-target)'`. All the build systems with monorepos give this feature.   
 These build tools come with their own set of pains though:
-
 - steep learning curve
 - high maintenance cost
 - bad IDE integration
@@ -20,12 +20,8 @@ These build tools come with their own set of pains though:
 Tools like `bazel` are extremely feature-rich, fast and provide some amazing qualities (like hermeticity). They are however, built for scale, where you have a dedicated engineering team taking care of it. They give the fast monorepo experience at scale.  
 `nabs` is not meant for those use-cases. `nabs` is for mid-sized engineering teams, who just want a simple monorepo setup while using existing tooling and infrastructure.  
 
-The main benefit I saw from a monorepo is that we could change all the code in one PR. Raising multiple PRs is a big velocity killer.  
-I generally prefer all code to be in the same repo. This works well for sometime, until your tests and pipelines start taking a long time. Or you now have multiple applications/services in the same monorepo (whose deployment should be done independently)   
-
-This is where `nabs` can come in. The only explicit goal of `nabs` is to track dependencies, it is neither a build executor, nor a test runner, nor a remote execution framework. `nabs` does not care about purity, it does not force any ideology on you.  
+The only explicit goal of `nabs` is to track dependencies, it is neither a build executor, nor a test runner, nor a remote execution framework. It's just a simple package tracker.  
 An explicit goal for `nabs` is to work with current tooling. In your monorepo, you could add an empty `nabs.json` file and `nabs` would start tracking it as a package. If you have `requirements.txt` in that package, `nabs` would automatically start treating it as a python package, find all the local dependencies in your workspace and start tracking them recursively.  
-Thats it, this makes it extremely trivial to add new build systems and languages.  
 
 # Getting started
 
@@ -50,7 +46,7 @@ nabs graph
 
 `nabs changeset` takes a list of files as input, finds the packages those files belong to, and finds all the packages which transitively depend on these packages. You can now run only the tests for affected packages in a PR (or your main branch build, you need to find a way to find the diff from the last successful build from your CI provider).  
 
-The usual workflow for selectively running scripts could be
+A simple script for this
 ```sh
 GIT_CHANGES=$(git diff-tree --no-commit-id --name-only -r origin/main my-awesome-branch)
 AFFECTED_PACKAGES=$(echo $GIT_CHANGES | nabs changeset)
