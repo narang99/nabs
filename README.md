@@ -60,3 +60,7 @@ A target is defined by using the good old bazel terminology: //packages/python/q
 - Given a target def, we want to verify if its valid, get the inferred result of that target
   - if the given target def is not in the inferred targets, this is not a valid dependency of the target
   - for now we panic?
+
+
+- one complication is path handling, i need to add methods for converting paths to target names and vice-versa
+  - this seems the most logical way to do this

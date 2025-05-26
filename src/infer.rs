@@ -1,61 +1,13 @@
-use std::collections::HashSet;
+mod core;
+mod icargo;
+mod py_requirements;
+
+use core::{Infer, InferredTarget, Next, Single};
 
 use anyhow::{Context, Result, bail};
 
-use crate::graph::{Target, TargetGraph};
-
-// this is what we use to infer `Target` from
-// its the underlying physical representation of a target
-// as an example, this could be a disk based target
-// or a hashmap based target (in unit tests)
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
-pub struct RawTarget {
-    pub name: String,
-}
-
-#[derive(Debug)]
-pub struct Single {
-    target: Target,
-    parents: Vec<RawTarget>,
-}
-
-#[derive(Debug)]
-pub enum InferredTarget {
-    One(Single),
-    Many(Vec<Single>),
-    Nothing,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum Next {
-    Continue,
-    Break,
-}
-
-#[derive(Debug)]
-pub struct InferResult {
-    pub it: InferredTarget,
-    pub what_next: Next,
-}
-
-pub trait Infer {
-    // given a target, an infer would return us the true inferred target
-    // and a list of raw targets of parent dependencies
-    // or no target
-    // - a single inferrer can return multiple targets
-    // - multiple inferrers can return single targets
-    // - an inferrer can break early
-    // - an inferrer can give no target
-
-    // - nabs.json inferrer: returns multiple targets and requires short-circuiting
-    // - running cargo inferrer on poetry gives None
-    // - a project containing both cargo.toml and requirements.txt returns 2 targets (1 target per inferrer)
-    // - We want to differentiate between allowed multiple targets and unintended multiple targets
-    // note that this function is not pure, it would basically do IO right now
-    // we could abstract that away, but is that necessary?
-
-    fn from_raw_target(&self, t: &RawTarget) -> Result<InferResult>;
-}
+use crate::graph::TargetGraph;
+use crate::types::{RawTarget, Target};
 
 pub struct InferRunner {
     infers: Vec<Box<dyn Infer>>,
@@ -120,10 +72,10 @@ impl InferRunner {
             let inf_res = inf
                 .from_raw_target(raw)
                 .context("failed in building graph of targets")?;
-            if let InferredTarget::Nothing = inf_res.it {
+            if let InferredTarget::Nothing = inf_res.inferred_target {
                 // nothing, just want the else part
             } else {
-                inferred_targets.push(inf_res.it);
+                inferred_targets.push(inf_res.inferred_target);
             }
 
             match inf_res.what_next {
@@ -172,9 +124,13 @@ mod test {
 
     use std::collections::HashMap;
 
-    use crate::{graph::Target, infer::InferRunner};
+    use crate::{
+        graph::TargetGraph,
+        infer::InferRunner,
+        types::{RawTarget, Target},
+    };
 
-    use super::{Infer, InferResult, InferredTarget, Next, RawTarget, Single};
+    use super::core::{Infer, InferResult, InferredTarget, Next, Single};
 
     struct Dep {
         ps: Vec<RawTarget>,
@@ -183,23 +139,26 @@ mod test {
 
     struct MockInfer {
         n_by_deps: HashMap<String, Dep>,
-        what_next: Next,
     }
 
     impl Infer for MockInfer {
-        fn from_raw_target(&self, t: &super::RawTarget) -> anyhow::Result<super::InferResult> {
-            let deps = self.n_by_deps.get(&t.name);
+        fn from_raw_target(
+            &self,
+            t: &super::RawTarget,
+        ) -> anyhow::Result<super::core::InferResult> {
+            let deps = self.n_by_deps.get(t.name.to_string_ref());
             match deps {
                 None => Ok(InferResult {
-                    it: InferredTarget::Nothing,
+                    inferred_target: InferredTarget::Nothing,
                     what_next: Next::Continue,
                 }),
                 Some(deps) => {
                     if deps.flavors.len() == 1 {
                         Ok(InferResult {
-                            it: InferredTarget::One(Single {
+                            inferred_target: InferredTarget::One(Single {
                                 target: Target::new(t.name.clone(), deps.flavors[0].clone()),
                                 parents: deps.ps.clone(),
+                                failed_parents: vec![],
                             }),
                             what_next: Next::Continue,
                         })
@@ -210,11 +169,12 @@ mod test {
                             .map(|f| Single {
                                 target: Target::new(t.name.clone(), f.clone()),
                                 parents: deps.ps.clone(),
+                                failed_parents: vec![],
                             })
                             .collect();
 
                         Ok(InferResult {
-                            it: InferredTarget::Many(targets),
+                            inferred_target: InferredTarget::Many(targets),
                             what_next: Next::Break,
                         })
                     }
@@ -225,22 +185,55 @@ mod test {
 
     #[test]
     fn test_runner() {
-        let infs: Vec<Box<dyn Infer>> = vec![
-            Box::new(get_infer_1()), Box::new(get_infer_2())
-        ];
+        let infs: Vec<Box<dyn Infer>> = vec![Box::new(get_infer_1()), Box::new(get_infer_2())];
         let runner = InferRunner::new(infs);
-        let start = vec![RawTarget {
-            name: "qureapi".to_string(),
-        }];
+        let start = vec![RawTarget::from_string_name("qureapi".to_string()).unwrap()];
         let graph = runner.build_graph(start).unwrap();
-        println!("{}", graph);
+        compare(
+            &graph,
+            "qure_dicom_utils",
+            "cargo",
+            vec![("qer", "cargo"), ("qxr", "cargo")],
+        );
+        compare(
+            &graph,
+            "qer",
+            "cargo",
+            vec![("qer_reports", "cargo"), ("qureapi", "cargo")],
+        );
+        compare(&graph, "qxr", "cargo", vec![("qureapi", "cargo")]);
+        compare(&graph, "qureapi", "cargo", vec![]);
+        compare(&graph, "qer_reports", "cargo", vec![("qureapi", "cargo")]);
 
-        // println!("{:?}", infs[1].from_raw_target(&RawTarget { name: "qsync_stream".to_string() }).unwrap());
-        let start = vec![RawTarget {
-            name: "image_manager".to_string(),
-        }];
+        let start = vec![RawTarget::from_string_name("image_manager".to_string()).unwrap()];
         let graph = runner.build_graph(start).unwrap();
-        println!("{}", graph);
+        compare(
+            &graph,
+            "qsync_stream",
+            "cargo",
+            vec![("image_manager", "python")],
+        );
+        compare(
+            &graph,
+            "qsync_stream",
+            "python",
+            vec![("image_manager", "python")],
+        );
+        compare(&graph, "image_manager", "python", vec![]);
+    }
+
+    fn compare(graph: &TargetGraph, name: &str, flavor: &str, want: Vec<(&str, &str)>) {
+        let ns = graph
+            .neighbors(&Target::from_string_name(name.to_string(), flavor.to_string()).unwrap())
+            .unwrap();
+        let got: Vec<(&String, &String)> = ns
+            .iter()
+            .map(|t| (t.name_as_string_ref(), &t.flavor))
+            .collect();
+        assert_eq!(got.len(), want.len());
+        for v in &want {
+            assert!(want.contains(&v));
+        }
     }
 
     fn get_infer_2() -> MockInfer {
@@ -248,9 +241,7 @@ mod test {
         n_by_deps.insert(
             "image_manager".to_string(),
             Dep {
-                ps: vec![RawTarget {
-                    name: "qsync_stream".to_string(),
-                }],
+                ps: vec![RawTarget::from_string_name("qsync_stream".to_string()).unwrap()],
                 flavors: vec!["python".to_string()],
             },
         );
@@ -261,70 +252,41 @@ mod test {
                 flavors: vec!["python".to_string(), "cargo".to_string()],
             },
         );
-        MockInfer {
-            n_by_deps,
-            what_next: Next::Continue,
-        }
+        MockInfer { n_by_deps }
     }
 
     fn get_infer_1() -> MockInfer {
-        let mut n_by_deps = HashMap::new();
-        n_by_deps = HashMap::from([
-            // (
-            //     "image_manager".to_string(),
-            //     vec![RawTarget {
-            //         name: "qsync_stream".to_string(),
-            //     }],
-            // ),
-            // ("qsync_stream".to_string(), vec![]),
+        let n_by_deps = HashMap::from([
             (
                 "qureapi".to_string(),
                 vec![
-                    RawTarget {
-                        name: "qxr".to_string(),
-                    },
-                    RawTarget {
-                        name: "qer".to_string(),
-                    },
-                    RawTarget {
-                        name: "qer_reports".to_string(),
-                    },
+                    RawTarget::from_string_name("qxr".to_string()).unwrap(),
+                    RawTarget::from_string_name("qer".to_string()).unwrap(),
+                    RawTarget::from_string_name("qer_reports".to_string()).unwrap(),
                 ],
             ),
             (
                 "cathode".to_string(),
                 vec![
-                    RawTarget {
-                        name: "qxr".to_string(),
-                    },
-                    RawTarget {
-                        name: "qxr_reports".to_string(),
-                    },
+                    RawTarget::from_string_name("qxr".to_string()).unwrap(),
+                    RawTarget::from_string_name("qxr_reports".to_string()).unwrap(),
                 ],
             ),
             (
                 "qxr".to_string(),
-                vec![RawTarget {
-                    name: "qure_dicom_utils".to_string(),
-                }],
+                vec![RawTarget::from_string_name("qure_dicom_utils".to_string()).unwrap()],
             ),
             (
                 "qxr_reports".to_string(),
-                vec![RawTarget {
-                    name: "qxr".to_string(),
-                }],
+                vec![RawTarget::from_string_name("qxr".to_string()).unwrap()],
             ),
             (
                 "qer".to_string(),
-                vec![RawTarget {
-                    name: "qure_dicom_utils".to_string(),
-                }],
+                vec![RawTarget::from_string_name("qure_dicom_utils".to_string()).unwrap()],
             ),
             (
                 "qer_reports".to_string(),
-                vec![RawTarget {
-                    name: "qer".to_string(),
-                }],
+                vec![RawTarget::from_string_name("qer".to_string()).unwrap()],
             ),
             ("qure_dicom_utils".to_string(), vec![]),
         ]);
@@ -340,9 +302,6 @@ mod test {
                 )
             })
             .collect();
-        MockInfer {
-            n_by_deps,
-            what_next: Next::Continue,
-        }
+        MockInfer { n_by_deps }
     }
 }

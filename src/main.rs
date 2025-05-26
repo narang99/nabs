@@ -1,5 +1,7 @@
 pub mod graph;
 pub mod infer;
+pub mod paths;
+pub mod types;
 
 fn main() {
     println!("Hello, world!");

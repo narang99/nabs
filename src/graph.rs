@@ -1,29 +1,13 @@
 use std::{collections::HashMap, fmt::Display, ops::Deref, rc::Rc};
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use petgraph::{
     Graph,
     graph::NodeIndex,
     visit::{Dfs, Visitable},
 };
 
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
-pub struct Target {
-    name: String,
-    flavor: String,
-}
-
-impl Target {
-    pub fn new(name: String, flavor: String) -> Self {
-        Target { name, flavor }
-    }
-}
-
-impl Display for Target {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.name, self.flavor)
-    }
-}
+use crate::types::Target;
 
 // petgraph has a whole notion of only using copy-able indices for their graph
 // everything happens in the form of `NodeIndex`, its hard to get what "index" some node is natively from petgraph
@@ -117,20 +101,40 @@ impl TargetGraph {
 
         Ok(res)
     }
+
+    /// given a target, return all neighbors, or the outgoing edges (calling it neighbors to mirror `petgraph`'s API)
+    /// does cloning, useful for tests, if using internally, directly use self.inner.neighbors for normal graph walking
+    pub fn neighbors(&self, target: &Target) -> Result<Vec<Target>> {
+        let node_idx = self.get_cloned_node_index(target)?;
+        let mut neighbors = Vec::new();
+        for neighbor_idx in self.inner.neighbors(node_idx) {
+            let neighbor = self.index_by_target.get(&neighbor_idx).context(
+                anyhow!("corrupted graph state, `index_by_target` did not contain an index we got from neighbors in graph, index={:?}", neighbor_idx)
+            )?;
+            neighbors.push(neighbor.deref().clone());
+        }
+        Ok(neighbors)
+    }
 }
 
 impl Display for TargetGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for node_idx in self.inner.node_indices() {
-            let node = self.index_by_target.get(&node_idx).expect("corrupted graph state");
+            let node = self
+                .index_by_target
+                .get(&node_idx)
+                .expect("corrupted graph state");
             write!(f, "{} -> ", node)?;
-            
+
             let mut neighbors = Vec::new();
             for neighbor_idx in self.inner.neighbors(node_idx) {
-                let neighbor = self.index_by_target.get(&neighbor_idx).expect("corrupted graph state");
+                let neighbor = self
+                    .index_by_target
+                    .get(&neighbor_idx)
+                    .expect("corrupted graph state");
                 neighbors.push(format!("{}", neighbor));
             }
-            
+
             writeln!(f, "[{}]", neighbors.join(", "))?;
         }
         Ok(())
@@ -139,7 +143,8 @@ impl Display for TargetGraph {
 
 #[cfg(test)]
 mod test {
-    use super::{Target, TargetGraph};
+    use super::TargetGraph;
+    use crate::types::Target;
 
     #[test]
     fn test_rdeps() {
@@ -147,15 +152,23 @@ mod test {
 
         // atleast create a reasonably big transitive graph
 
-        let qsync_stream = Target::new(String::from("qsync_stream"), String::from("cargo"));
-        let image_manager = Target::new(String::from("image_manager"), String::from("cargo"));
-        let qure_dicom_utils = Target::new(String::from("qure_dicom_utils"), String::from("cargo"));
-        let qxr = Target::new(String::from("qxr"), String::from("cargo"));
-        let qxr_reports = Target::new(String::from("qxr_reports"), String::from("cargo"));
-        let qer = Target::new(String::from("qer"), String::from("cargo"));
-        let qer_reports = Target::new(String::from("qer_reports"), String::from("cargo"));
-        let qureapi = Target::new(String::from("qureapi"), String::from("cargo"));
-        let cathode = Target::new(String::from("cathode"), String::from("cargo"));
+        let qsync_stream =
+            Target::from_string_name(String::from("qsync_stream"), String::from("cargo")).unwrap();
+        let image_manager =
+            Target::from_string_name(String::from("image_manager"), String::from("cargo")).unwrap();
+        let qure_dicom_utils =
+            Target::from_string_name(String::from("qure_dicom_utils"), String::from("cargo"))
+                .unwrap();
+        let qxr = Target::from_string_name(String::from("qxr"), String::from("cargo")).unwrap();
+        let qxr_reports =
+            Target::from_string_name(String::from("qxr_reports"), String::from("cargo")).unwrap();
+        let qer = Target::from_string_name(String::from("qer"), String::from("cargo")).unwrap();
+        let qer_reports =
+            Target::from_string_name(String::from("qer_reports"), String::from("cargo")).unwrap();
+        let qureapi =
+            Target::from_string_name(String::from("qureapi"), String::from("cargo")).unwrap();
+        let cathode =
+            Target::from_string_name(String::from("cathode"), String::from("cargo")).unwrap();
 
         g.add_node(image_manager.clone());
         g.add_node(qsync_stream.clone());
