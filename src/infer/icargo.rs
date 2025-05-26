@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use serde::Deserialize;
 
-use super::core::{Infer, InferResult, InferredTarget, Next, Single};
+use super::core::{FailedParent, Infer, InferResult, InferredTarget, Next, Single};
 use crate::types::{BuildSystemPath, PathFormat, RawTarget, Repository, Target};
 
 pub const CARGO_FLAVOR: &str = "cargo";
@@ -39,27 +39,21 @@ fn get_parents(
     our_target: &RawTarget,
     cargo_toml: CargoToml,
     repo: &Box<dyn Repository>,
-) -> Result<Vec<RawTarget>> {
-    let mut parents = Vec::new();
-    parents.extend(deps_to_raw_targets(
-        our_target,
-        cargo_toml.dependencies,
-        repo,
-    )?);
-    parents.extend(deps_to_raw_targets(
-        our_target,
-        cargo_toml.dev_dependencies,
-        repo,
-    )?);
-    Ok(parents)
+) -> Result<(Vec<RawTarget>, Vec<FailedParent>)> {
+    let (mut s, mut f) = deps_to_raw_targets(our_target, cargo_toml.dependencies, repo)?;
+    let (s1, f1) = deps_to_raw_targets(our_target, cargo_toml.dev_dependencies, repo)?;
+    s.extend(s1);
+    f.extend(f1);
+    Ok((s, f))
 }
 
 fn deps_to_raw_targets(
     our_target: &RawTarget,
     deps: HashMap<String, Dependency>,
     repo: &Box<dyn Repository>,
-) -> Result<Vec<RawTarget>> {
-    let mut res = Vec::new();
+) -> Result<(Vec<RawTarget>, Vec<FailedParent>)> {
+    let mut success = Vec::new();
+    let mut failed = Vec::new();
     for (_, dep) in deps.into_iter() {
         let maybe_path = match dep {
             Dependency::Simple(_) => None,
@@ -67,11 +61,23 @@ fn deps_to_raw_targets(
         };
         if let Some(build_sys_path_str) = maybe_path {
             let path = BuildSystemPath::new(build_sys_path_str, PathFormat::Posix);
-            let parent_raw_target = repo.resolve_rel_path(&path, our_target)?;
-            res.push(parent_raw_target);
+            if path.is_absolute() {
+                failed.push(FailedParent {
+                    name: path.raw.clone(),
+                    reason: "absolute paths are not allowed".to_string(),
+                });
+            } else {
+                match repo.resolve_rel_path(&path, our_target) {
+                    Ok(parent_raw_target) => success.push(parent_raw_target),
+                    Err(e) => failed.push(FailedParent {
+                        name: path.raw.clone(),
+                        reason: format!("{}", e),
+                    }),
+                };
+            }
         }
     }
-    Ok(res)
+    Ok((success, failed))
 }
 
 impl Infer for CargoInfer {
@@ -87,14 +93,14 @@ impl Infer for CargoInfer {
             }),
             Some(content) => {
                 let cargo_toml: CargoToml = toml::from_str(&content)?;
-                let parents = get_parents(t, cargo_toml, &self.repo)?;
+                let (success, failed) = get_parents(t, cargo_toml, &self.repo)?;
                 let target = Target::from_raw_target(&t, CARGO_FLAVOR.to_string())?;
 
                 Ok(InferResult {
                     inferred_target: InferredTarget::One(Single {
                         target,
-                        parents,
-                        failed_parents: vec![],
+                        parents: success,
+                        failed_parents: failed,
                     }),
                     what_next: Next::Continue,
                 })
@@ -125,11 +131,13 @@ mod test {
             [dependencies]
             serde = { version = "1.0", path = "../serde" }
             toml = { path = "../toml" }
+            yo = { path = "/yours/ha/" }
             hey = "1.2"
             lol = {version = "1"}
 
             [dev-dependencies]
             anyhow = { path = "../anyhow" }
+            fails = {path = "../../../../fails"}
         "#;
         let repo = MockRepo::new(
             HashMap::from([(format!("{}/Cargo.toml", us_name), toml_str.to_string())]),
@@ -159,6 +167,16 @@ mod test {
                     &"libs/toml".to_string(),
                     &"libs/anyhow".to_string(),
                 ],
+            );
+
+            let failures: Vec<String> = single
+                .failed_parents
+                .iter()
+                .map(|p| p.name.clone())
+                .collect();
+            compare_vec(
+                &failures,
+                &vec!["/yours/ha/".to_string(), "../../../../fails".to_string()],
             );
         } else {
             panic!("expected inferred_target to be One variant");
