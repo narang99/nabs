@@ -1,66 +1,64 @@
-# nabs: not a build system
+# nabs: Not a Build System
 
-The tool only does diffing. Only for simple projects, small projects, its fine  
-Not for huge monorepos where a ridiculous number of developers work  
-It is only needed for figuring out what to run given some changeset  
+**NOTE:** This project is not in a very useful state right now, I'm only planning to use it personal projects to see if its any good.  
 
-As such, it does nothing like running any build steps. All we do is provide diffing  
+`nabs` models your monorepo as a graph and finds all the affected packages given a changeset.  
 
-Start with just python, find requirements.txt and parse it, this gives us
+When using a monorepo, it is very useful to only selectively run pipelines. A common workflow is this:
+- find the diff in the PR using git
+- find all the affected packages and services using this diff
+- run scripts/pipelines for all the affected packages
 
-Targets right now are simply file paths  
-Given a file path, who all are affected is the simple question  
+This can be done in bazel, for example, using `bazel query 'rdeps(//my-target)'`. All the build systems with monorepos give this feature. The problem is that each of these build tools have a **steep learning curve and a high maintenance cost**. Tools like `bazel` have their own way of building, which can be different from how open-source does it, and thus developers struggle with trivial things like IDE integration.  
 
-We need to find all files. Every package does need a boundary (nabs.json).  
+The main benefit I saw from a monorepo is that we could change all the code in one PR. Raising multiple PRs is a big velocity killer for me personally.  
+I generally prefer all code to be in the same repo. This works well for sometime, until your tests and pipelines start taking a long time. Or you now have multiple applications/services in the same monorepo (whose deployment should be done independently)   
 
-given a nabs.json, we have a simple connected graph.  just walk that graph for querying  
-the monorepo root is defined by workspace.json  
+This is where `nabs` can come in. The only explicit goal of `nabs` is to track dependencies, it is neither a build executor, nor a test runner, nor a remote execution framework. `nabs` does not care about purity, it does not force any ideology on you.  
+An explicit goal for `nabs` is to work with current tooling. In your monorepo, you could add an empty `nabs.json` file and `nabs` would start tracking it as a package. If you have `requirements.txt` in that package, `nabs` would automatically start treating it as a python package, find all the local dependencies in your workspace and start tracking them recursively.  
+Thats it, this makes it extremely trivial to add new build systems and languages.  
 
-A target is defined by using the good old bazel terminology: //packages/python/qsync_stream is an example target  
+# Getting started
 
+Add an empty `workspace.json` in the root of your monorepo.  
+```sh
+echo "{}" > workspace.json
+```
 
-- First create the graph after walking the file system  
-  - Create a graph, each node is a nabs package  
-  - we somehow create edges in the graph
-  - Given a node, we want to simply find all downstream children
-  - We can go one more way and provide the most optimal way of running CI (that is, people wait only for whatever is running)
-    - this would be done later though
-
-
-
-- rdeps done
-
-# creating the graph
-
-- nabs would first read the whole file tree and try to detect packages
-- right now, any directory containing nabs.json is a package
-- read the file and try to infer what build system is being used
-- inference can return multiple detected build systems, in this case, nabs would error out
-  - users are required to fix the build system in nabs.json
-  - you could technically have multiple build systems in the same directory, and nabs should be able to work hmmm
-  - the most generic case is that someone has x build systems in the directory
-  - nabs should detect and create a node for each of those
+In every package in the monorepo, add an empty `nabs.json` file
+```sh
+echo "{}" > nabs.json
+```
+`nabs` would start tracking your package. Do this for every package in the monorepo.  
 
 
+You can take a look at the graph `nabs` creates using
 
-- given a package, the inferrer returns
-  - current Target definition
-  - parent Target defs
+```sh
+# from any folder inside the workspace
+nabs graph
+```
 
-- a single inferrer can return multiple targets
-- multiple inferrers can return single targets
-- an inferrer can break early
-- an inferrer can give no target
+`nabs changeset` takes a list of files as input, finds the packages those files belong to, and finds all the packages which transitively depend on these packages. The idea is that you can run the CI pipelines for these specific packages.  
 
-- nabs.json inferrer: returns multiple targets and requires shortcircuting
-- running cargo inferrer on poetry gives None
-- a project containing both cargo.toml and requirements.txt returns 2 targets (1 target per inferrer)
-- We want to differentiate between allowed multiple targets and unintended multiple targets
+The usual workflow for selectively running scripts could be
+```sh
+CHANGED_GIT_FILES=$(git diff-tree --no-commit-id --name-only -r origin/main my-awesome-branch)
+AFFECTED_PACKAGES=$(echo $CHANGED_GIT_FILES | nabs changeset)
 
-- Given a target def, we want to verify if its valid, get the inferred result of that target
-  - if the given target def is not in the inferred targets, this is not a valid dependency of the target
-  - for now we panic?
+# run a script inside the package directory
+# or you could run a github action, or a jenkins pipeline
+echo $AFFECTED_PACKAGES | while read pkg_dir; do $pkg_dir/run_test.sh; done
+```
+
+## Supported build systems/languages
+- Python
+  - requirements.txt
+- Rust 
+  - Cargo.toml
 
 
-- one complication is path handling, i need to add methods for converting paths to target names and vice-versa
-  - this seems the most logical way to do this
+## should I use `nabs`?
+
+- `nabs` is supposed to be useful in that spot where your monorepo has started taking a lot of your CI time but you don't want to do a big investment in a fancy build tool.    
+- you should not use `nabs` if you have huge repositories with many developers, in this case, `bazel` and other build tools are clear winners.  
