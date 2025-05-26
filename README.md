@@ -11,6 +11,7 @@ When using a monorepo, it is very useful to only selectively run CI pipelines. A
 
 This can be done in `bazel` and friends, for example, using `bazel query 'rdeps(//my-target)'`. All the build systems with monorepos give this feature.   
 These build tools come with their own set of pains though:
+
 - steep learning curve
 - high maintenance cost
 - bad IDE integration
@@ -47,12 +48,12 @@ You can take a look at the graph `nabs` creates using
 nabs graph
 ```
 
-`nabs changeset` takes a list of files as input, finds the packages those files belong to, and finds all the packages which transitively depend on these packages. The idea is that you can run the CI pipelines for these specific packages.  
+`nabs changeset` takes a list of files as input, finds the packages those files belong to, and finds all the packages which transitively depend on these packages. You can now run only the tests for affected packages in a PR (or your main branch build, you need to find a way to find the diff from the last successful build from your CI provider).  
 
 The usual workflow for selectively running scripts could be
 ```sh
-CHANGED_GIT_FILES=$(git diff-tree --no-commit-id --name-only -r origin/main my-awesome-branch)
-AFFECTED_PACKAGES=$(echo $CHANGED_GIT_FILES | nabs changeset)
+GIT_CHANGES=$(git diff-tree --no-commit-id --name-only -r origin/main my-awesome-branch)
+AFFECTED_PACKAGES=$(echo $GIT_CHANGES | nabs changeset)
 
 # run a script inside the package directory
 # or you could run a github action, or a jenkins pipeline
@@ -60,13 +61,12 @@ echo $AFFECTED_PACKAGES | while read pkg_dir; do $pkg_dir/run_test.sh; done
 ```
 
 ## Supported build systems/languages
-- Python
-  - requirements.txt
-- Rust 
-  - Cargo.toml
-
+| language | tool/manifest file |
+|----------|--------------------|
+|  python  | requirements.txt |
+| rust | Cargo.toml |
 
 ## should I use `nabs`?
 
-- `nabs` is supposed to be useful in that spot where your monorepo has started taking a lot of your CI time but you don't want to do a big investment in a fancy build tool.    
+- `nabs` is supposed to be useful in that spot where your monorepo has started taking a lot of your CI time but you don't want to do a big investment in a stronger build tool.    
 - you should not use `nabs` if you have huge repositories with many developers, in this case, `bazel` and other build tools are clear winners.  
