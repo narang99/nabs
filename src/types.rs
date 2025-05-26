@@ -16,9 +16,7 @@
 /// Finally `Repository` is the trait which allows us to play with the repository (it could be FS or just a mock implementation)
 /// This trait provides many primitives to inter-convert all our path representations
 use std::{
-    collections::HashMap,
-    fmt::Display,
-    path::{Path, PathBuf},
+    collections::HashMap, fmt::Display, io::ErrorKind, path::{Path, PathBuf}
 };
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -133,7 +131,9 @@ impl RawTarget {
     }
 
     pub fn from_string_name(name: String) -> Result<Self> {
-        Ok(Self::new(TargetName::new(name)?))
+        Ok(Self::new(TargetName::new(name.clone()).context(
+            anyhow!("failed in creating target_name={}", name),
+        )?))
     }
 }
 
@@ -206,7 +206,7 @@ pub trait Repository {
         let nabs_pkgs: Vec<PathBuf> = ignore::Walk::new(self.workspace_root()).into_iter().filter_map(|v| {
             match v {
                 Err(e) => {
-                    println!("warning: nabs could not read path, skipping analysis for this path and its children. cause={}", e);
+                    eprintln!("warning: nabs could not read path, skipping analysis for this path and its children. cause={}", e);
                     None
                 },
                 Ok(entry) => {
@@ -216,7 +216,7 @@ pub trait Repository {
                             None => None,
                             Some(v) => {
                                 if v == "nabs.json" {
-                                    PathBuf::from(v).parent().map(|p| PathBuf::from(p))
+                                    PathBuf::from(p).parent().map(|p| PathBuf::from(p.strip_prefix(self.workspace_root()).unwrap()))
                                 } else {
                                     None
                                 }
@@ -305,12 +305,10 @@ impl Repository for Monorepo {
         match std::fs::read_to_string(path) {
             Ok(s) => Some(s),
             Err(e) => {
-                println!(
-                    "warning: nabs failed to read file={}, skipping, cause={}",
-                    path.to_string_lossy(),
-                    e
-                );
-                None
+                match e.kind() {
+                    ErrorKind::NotFound => None,
+                    _ => panic!("{:?}", e),
+                }
             }
         }
     }

@@ -3,7 +3,7 @@ use std::{collections::HashSet, io::Read, path::PathBuf, rc::Rc};
 use crate::graph::TargetGraph;
 use crate::infer::InferRunner;
 use crate::types::{Monorepo, RawTarget, Repository, Target, TargetName};
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use log::{debug, info};
 
 pub fn get_changeset() -> Result<()> {
@@ -11,7 +11,7 @@ pub fn get_changeset() -> Result<()> {
 
     let monorepo: Rc<dyn Repository> = Rc::new(Monorepo::new()?);
     let pkgs: HashSet<PathBuf> = HashSet::from_iter(monorepo.get_nabs_packages());
-    debug!("all detected packages, {:?}", pkgs);
+    info!("all detected packages, {:?}", pkgs);
 
     let to_search = get_pkgs_to_search(&files_to_find_diff, &pkgs)?;
     info!("changed packages: {:?}", to_search);
@@ -72,7 +72,7 @@ fn validate_and_warn_on_missing_targets(
         let ts: HashSet<&TargetName> = our_targets.iter().map(|v| &v.name).collect();
         for t in to_search {
             if !ts.contains(t) {
-                println!("warn: file={} not part of any package", t);
+                eprintln!("warn: file={} not part of any package", t);
             }
         }
     }
@@ -87,13 +87,16 @@ fn get_pkgs_to_search(
         let pkg = which_pkg(&f, &pkgs);
         match pkg {
             None => {
-                println!("file={} is not part of any package", f.to_string_lossy());
+                eprintln!("file={} is not part of any package", f.to_string_lossy());
             }
             Some(v) => {
-                let v = v
+                let v_str = v
                     .to_str()
                     .ok_or(anyhow!("could not parse package path: {:?}", v))?;
-                pkgs_to_search.insert(TargetName::new(v.to_string())?);
+                pkgs_to_search.insert(
+                    TargetName::new(v_str.to_string())
+                        .context(anyhow!("failed to create target for {:?}", v))?,
+                );
             }
         }
     }

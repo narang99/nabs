@@ -19,7 +19,7 @@ fn main() {
     let cli = Cli::parse();
     match run_command(cli.command) {
         Err(e) => {
-            println!("error: {}", e);
+            eprintln!("error: {:#?}", e);
             std::process::exit(-1);
         }
         Ok(()) => {}

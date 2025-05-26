@@ -1,5 +1,8 @@
 use std::rc::Rc;
 
+use anyhow::{Context, anyhow};
+use log::info;
+
 use crate::types::{BuildSystemPath, PathFormat, RawTarget, Repository, Target};
 
 use super::core::{FailedParent, Infer, InferResult, InferredTarget, Next, Single};
@@ -57,9 +60,11 @@ impl Infer for PyRequirementsInfer {
                         };
                     }
                 }
+                info!("PyRequirementsInfer: detected package={}", t);
                 Ok(InferResult {
                     inferred_target: InferredTarget::One(Single {
-                        target: Target::from_raw_target(t, FLAVOR.to_string())?,
+                        target: Target::from_raw_target(t, FLAVOR.to_string())
+                            .context(anyhow!("failed in creating target for package={}", t.name))?,
                         parents: success,
                         failed_parents: failed,
                     }),

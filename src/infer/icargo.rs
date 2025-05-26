@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use anyhow::Result;
+use anyhow::{Context, Result, anyhow};
 use serde::Deserialize;
 
 use super::core::{FailedParent, Infer, InferResult, InferredTarget, Next, Single};
@@ -100,7 +100,9 @@ impl Infer for CargoInfer {
             Some(content) => {
                 let cargo_toml: CargoToml = toml::from_str(&content)?;
                 let (success, failed) = get_parents(t, cargo_toml, &self.repo)?;
-                let target = Target::from_raw_target(&t, CARGO_FLAVOR.to_string())?;
+                let target = Target::from_raw_target(&t, CARGO_FLAVOR.to_string()).context(
+                    anyhow!("failed in creating target in cargo inferrer, package={}", t),
+                )?;
 
                 Ok(InferResult {
                     inferred_target: InferredTarget::One(Single {

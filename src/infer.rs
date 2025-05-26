@@ -75,11 +75,12 @@ impl InferRunner {
 
                 match self.build_graph_rec(g, p) {
                     Err(e) => {
-                        println!(
-                            "warning: failed in creating graph for package={}. nabs will skip adding this target in analysis",
-                            p.name
+                        eprintln!(
+                            "warning: failed in creating graph for package={}. nabs will skip adding this target in analysis. This package was found in the dependencies of {}",
+                            p.name,
+                            our.target.name,
                         );
-                        println!("reason:\n{:?}", e);
+                        eprintln!("reason:\n{:?}", e);
                     }
                     Ok(parent_targets) => {
                         for pt in parent_targets {
@@ -96,7 +97,7 @@ impl InferRunner {
 
     fn warn_for_failed_parents(&self, target_name: &str, failed: &Vec<FailedParent>) {
         for p in failed {
-            println!(
+            eprintln!(
                 "warn: failed parsing dependency for package={} dependency={}, reason={}",
                 target_name, p.name, p.reason
             );
