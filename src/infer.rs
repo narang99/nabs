@@ -2,7 +2,7 @@ mod core;
 mod icargo;
 mod py_requirements;
 
-use core::{Infer, InferredTarget, Next, Single};
+use core::{FailedParent, Infer, InferredTarget, Next, Single};
 use std::rc::Rc;
 
 use anyhow::{Context, Result, bail};
@@ -67,6 +67,7 @@ impl InferRunner {
                 continue;
             }
             g.add_node(our.target.clone());
+            self.warn_for_failed_parents(&our.target.name_as_string_ref(), &our.failed_parents);
             for p in &our.parents {
                 // for a parent's failure in inference, currently only logging it
                 // the cli would ignore failures in parent graph building
@@ -91,6 +92,15 @@ impl InferRunner {
             }
         }
         Ok(our_inferred_targets.into_iter().map(|i| i.target).collect())
+    }
+
+    fn warn_for_failed_parents(&self, target_name: &str, failed: &Vec<FailedParent>) {
+        for p in failed {
+            println!(
+                "warn: failed parsing dependency for package={} dependency={}, reason={}",
+                target_name, p.name, p.reason
+            );
+        }
     }
 
     pub fn run_inf(&self, raw: &RawTarget) -> Result<Vec<Single>> {

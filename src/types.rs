@@ -22,6 +22,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, bail};
+use log::info;
 
 use crate::paths::{normalize_path, posix_to_win};
 
@@ -284,6 +285,7 @@ impl Monorepo {
         loop {
             let workspace_file = search_path.join("workspace.json");
             if workspace_file.exists() {
+                info!("workspace-path={}", search_path.to_string_lossy());
                 return Ok(Monorepo {
                     workspace_path: search_path.to_path_buf(),
                 });
@@ -325,6 +327,7 @@ pub struct MockRepo {
 }
 
 impl MockRepo {
+    #[allow(unused)]
     pub fn new(path_by_content: HashMap<String, String>, workspace_path: PathBuf) -> MockRepo {
         MockRepo {
             fake: path_by_content,
